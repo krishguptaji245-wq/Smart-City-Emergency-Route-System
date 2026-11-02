@@ -1,0 +1,640 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart City Emergency Command Center</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#06101f;color:#e7edf7;font-family:Arial,sans-serif}
+header{background:#0d1a2d;padding:18px 22px;display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}
+h1{margin:0 0 7px;font-size:27px}
+header p{margin:0;color:#13d6ad;font-weight:bold}
+.stats{display:flex;gap:10px;flex-wrap:wrap}
+.stat{background:#13243a;padding:12px 15px;min-width:110px;border-left:4px solid #3194ff}
+.stat:nth-child(2){border-color:#13d6ad}
+.stat:nth-child(3){border-color:#ffbd42}
+.stat:nth-child(4){border-color:#ff4764}
+.stat small{display:block;color:#9aafc9;margin-bottom:8px}
+.stat strong{font-size:22px}
+.layout{display:grid;grid-template-columns:300px minmax(300px,1fr) 300px;gap:16px;padding:16px;min-height:calc(100vh - 110px)}
+.panel{background:#0d1b2e;padding:20px;min-width:0}
+h2{font-size:18px;margin:3px 0 8px}
+.subtitle{color:#8ca8c8;font-size:12px;margin-bottom:22px}
+label{display:block;color:#9db4d0;font-size:12px;margin:15px 0 8px}
+select,input,button{width:100%;padding:12px;border:1px solid #243c58;background:#14263d;color:#eef5ff;border-radius:3px;font-size:14px}
+input::placeholder{color:#91a8c6}
+button{cursor:pointer;font-weight:bold;margin-top:9px}
+button:hover{filter:brightness(1.15)}
+.green{background:#12cfa2;color:white;border:0}
+.blue{background:#2789f5;border:0}
+.orange{background:#87502d;border:0}
+.red{background:#852d40;border:0}
+.yellow{background:#ffbd42;color:#172238;border:0}
+.teal{background:#17735f;border:0}
+.search-wrap{position:relative}
+.search-results{position:absolute;top:100%;left:0;right:0;z-index:2000;background:#14263d;border:1px solid #29435f;max-height:220px;overflow-y:auto;display:none;box-shadow:0 5px 15px #0008}
+.search-results div{padding:11px;cursor:pointer;border-bottom:1px solid #263b53;line-height:1.4}
+.search-results div:hover{background:#2789f5}
+.search-results .muted{color:#a8bad0;cursor:default}
+.status,.output{background:#14263d;padding:12px;margin-top:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.output{background:#071323;min-height:65px}
+.map-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.map-toolbar button{width:auto;margin:0}
+#map{height:calc(100vh - 285px);min-height:430px;width:100%}
+.map-note{font-size:12px;color:#9bb1cc;margin-top:10px;line-height:1.5}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.metric{background:#14263d;padding:14px 10px;border-left:4px solid #12d6a2}
+.metric.time{border-color:#ffbd42}
+.metric small{display:block;color:#9bb1cc;margin-bottom:8px}
+.metric strong{font-size:22px;color:#12d6a2}
+.metric.time strong{color:#ffbd42}
+.tabs{display:flex;gap:6px;margin:12px 0}
+.tabs button{font-size:12px;padding:8px 4px;margin:0}
+.hidden{display:none}
+.incident{background:#14263b;padding:12px;margin:10px 0;border-left:4px solid #2789f5;cursor:pointer}
+.incident.critical{border-color:#ff4764}
+.incident h3{font-size:14px;margin:0 0 8px}
+.incident p{margin:5px 0;color:#b6c9df;font-size:12px}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#10233a;color:white}
+@media(max-width:1050px){.layout{grid-template-columns:1fr 1fr}.map-panel{grid-column:1/-1;grid-row:1}#map{height:55vh}}
+@media(max-width:650px){.layout{grid-template-columns:1fr}.map-panel{grid-column:auto}#map{height:55vh;min-height:350px}h1{font-size:22px}}
+</style>
+</head>
+
+<body>
+<header>
+<div>
+<h1>Emergency Command Center</h1>
+<p>SMART CITY ROUTE &amp; EMERGENCY MANAGEMENT</p>
+</div>
+<div class="stats">
+<div class="stat"><small>CITY LOCATIONS</small><strong id="locationCount">7</strong></div>
+<div class="stat"><small>TOTAL ROADS</small><strong id="roadCount">10</strong></div>
+<div class="stat"><small>ACTIVE INCIDENTS</small><strong id="activeCount">0</strong></div>
+<div class="stat"><small>CRITICAL</small><strong id="criticalCount">0</strong></div>
+</div>
+</header>
+
+<div class="layout">
+
+<section class="panel">
+<h2>INCIDENT QUEUE</h2>
+<div class="subtitle">ROUTE &amp; EMERGENCY CONTROLS</div>
+
+<label>SOURCE LOCATION</label>
+<div class="search-wrap">
+<input id="source" placeholder="Search any Nashik location..." autocomplete="off">
+<div id="sourceResults" class="search-results"></div>
+</div>
+
+<label>DESTINATION</label>
+<div class="search-wrap">
+<input id="destination" placeholder="Search destination..." autocomplete="off">
+<div id="destinationResults" class="search-results"></div>
+</div>
+
+<button class="green" onclick="findRoute('shortest')">Find Shortest Route</button>
+<button class="blue" onclick="findRoute('fastest')">Find Fastest Route</button>
+<button class="orange" onclick="addIncident()">Add Emergency Request</button>
+<button class="red" onclick="processIncident()">Process Next Emergency</button>
+
+<label>ROAD TRAFFIC CONTROL</label>
+<select id="roadSelect"></select>
+
+<label>TRAFFIC CONDITION</label>
+<select id="traffic">
+<option value="0">Low</option>
+<option value="1">Moderate</option>
+<option value="2">Heavy</option>
+<option value="3">Closed</option>
+</select>
+
+<button class="yellow" onclick="changeTraffic()">Update Traffic</button>
+<button class="teal" onclick="toggleSimulation()" id="simulationButton">Start Traffic Simulation</button>
+<button class="teal" onclick="saveData()">Save Data</button>
+<button class="teal" onclick="loadData()">Load Data</button>
+<div class="status" id="connectionStatus">Connecting...</div>
+</section>
+
+<section class="panel map-panel">
+<div class="map-toolbar">
+<div>
+<h2>CITY ROAD NETWORK</h2>
+<div class="subtitle" style="margin:6px 0 0">NASHIK INTERACTIVE MAP</div>
+</div>
+<button class="blue" onclick="resetMap()">Reset Map</button>
+</div>
+<div id="map"></div>
+<div class="map-note">Map data © OpenStreetMap contributors. Search powered by Photon. Routing powered by OSRM.</div>
+</section>
+
+<section class="panel">
+<h2>INCIDENT DETAILS</h2>
+<div class="subtitle">ROUTE / SYSTEM OUTPUT</div>
+
+<div class="output" id="routeOutput">Search source and destination.</div>
+
+<div class="metrics">
+<div class="metric">
+<small>ROAD DISTANCE</small>
+<strong id="distanceValue">-- KM</strong>
+</div>
+<div class="metric time">
+<small>ESTIMATED TIME</small>
+<strong id="timeValue">-- MIN</strong>
+</div>
+</div>
+
+<div class="tabs">
+<button class="blue" onclick="showTab('incidents')">Incidents</button>
+<button class="blue" onclick="showTab('route')">Route</button>
+<button class="blue" onclick="showTab('system')">System</button>
+</div>
+
+<div id="incidentsTab">
+<h3>EMERGENCY REQUESTS</h3>
+<div id="incidentList">Loading incidents...</div>
+</div>
+
+<div id="routeTab" class="hidden">
+<h3>ROUTE INFORMATION</h3>
+<div class="output" id="routeDetails">No route selected.</div>
+</div>
+
+<div id="systemTab" class="hidden">
+<h3>SYSTEM STATUS</h3>
+<div class="output" id="systemOutput">Connecting...</div>
+</div>
+
+<button class="red" onclick="completeIncident()">Complete Selected Incident</button>
+</section>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+const places=[
+{name:'Central',lat:19.9975,lon:73.7898},
+{name:'City Hospital',lat:20.0066,lon:73.7824},
+{name:'Police Station',lat:20.0057,lon:73.7904},
+{name:'Fire Station',lat:20.0035,lon:73.7890},
+{name:'Airport',lat:20.1190,lon:73.9129},
+{name:'Market',lat:20.0005,lon:73.7895},
+{name:'North Junction',lat:20.0120,lon:73.7900}
+];
+
+const roads=[
+[0,1,4,0],[0,2,3,0],[1,3,2,0],[2,3,5,0],
+[3,4,4,0],[2,5,3,0],[5,3,2,0],[0,6,3,0],
+[6,1,4,0],[5,4,5,0]
+];
+
+const trafficColors=['#12d6a2','#ffbd42','#ff4764','#858b98'];
+let selectedSource=null,selectedDestination=null;
+let selectedIncident=null,incidents=[];
+let routeLayer=null,vehicleMarker=null,vehicleTimer=null;
+let simulationRunning=false;
+const timers={source:null,destination:null};
+const requestIDs={source:0,destination:0};
+
+const BBOX={
+minLon:73.65,minLat:19.85,
+maxLon:74.05,maxLat:20.20
+};
+
+const map=L.map('map').setView([19.9975,73.7898],12);
+
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+maxZoom:19,
+attribution:'&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const roadSelect=document.getElementById('roadSelect');
+
+roads.forEach((r,i)=>{
+roadSelect.add(new Option(
+'Road '+(i+1)+' ('+places[r[0]].name+' - '+places[r[1]].name+')',i
+));
+});
+
+const graphLayers=[];
+
+places.forEach(p=>{
+L.marker([p.lat,p.lon]).addTo(map).bindPopup(p.name);
+});
+
+roads.forEach((r,i)=>{
+const a=places[r[0]],b=places[r[1]];
+const l=L.polyline([[a.lat,a.lon],[b.lat,b.lon]],{
+color:trafficColors[r[3]],weight:2,dashArray:'5 6'
+}).addTo(map);
+l.bindTooltip('Road '+(i+1)+' | '+r[2]+' km');
+graphLayers.push(l);
+});
+
+function setStatus(s){
+document.getElementById('connectionStatus').textContent=s;
+}
+
+function showTab(t){
+['incidents','route','system'].forEach(n=>{
+document.getElementById(n+'Tab').classList.toggle('hidden',n!==t);
+});
+}
+
+async function searchLocation(q,type){
+const box=document.getElementById(type+'Results');
+const rid=++requestIDs[type];
+
+if(q.trim().length<3){
+box.style.display='none';
+return;
+}
+
+box.innerHTML='<div class="muted">Searching Nashik...</div>';
+box.style.display='block';
+
+try{
+const bbox=[BBOX.minLon,BBOX.minLat,BBOX.maxLon,BBOX.maxLat].join(',');
+const url='https://photon.komoot.io/api/?q='+encodeURIComponent(q)+'&limit=10&lang=en&bbox='+bbox;
+const res=await fetch(url);
+
+if(!res.ok)throw Error('Search service unavailable');
+
+const data=await res.json();
+if(rid!==requestIDs[type])return;
+
+box.innerHTML='';
+
+const found=(data.features||[]).filter(f=>{
+const c=f.geometry.coordinates;
+return c[0]>=BBOX.minLon&&c[0]<=BBOX.maxLon&&
+c[1]>=BBOX.minLat&&c[1]<=BBOX.maxLat;
+});
+
+if(!found.length){
+box.innerHTML='<div class="muted">No Nashik location found. Try another name.</div>';
+return;
+}
+
+found.forEach(f=>{
+const p=f.properties,c=f.geometry.coordinates;
+const loc={name:p.name||q,lat:c[1],lon:c[0]};
+const detail=[p.street,p.district,p.city,p.state].filter(Boolean).join(', ');
+const item=document.createElement('div');
+
+item.textContent=loc.name+(detail?' — '+detail:'');
+item.onclick=()=>selectLocation(loc,type);
+box.appendChild(item);
+});
+
+}catch(e){
+if(rid!==requestIDs[type])return;
+box.innerHTML='<div class="muted">Search failed. Check internet connection.</div>';
+console.error(e);
+}
+}
+
+function selectLocation(loc,type){
+document.getElementById(type).value=loc.name;
+document.getElementById(type+'Results').style.display='none';
+
+if(type==='source')selectedSource=loc;
+else selectedDestination=loc;
+
+L.marker([loc.lat,loc.lon]).addTo(map).bindPopup(loc.name).openPopup();
+map.setView([loc.lat,loc.lon],14);
+}
+
+['source','destination'].forEach(type=>{
+document.getElementById(type).addEventListener('input',function(){
+if(type==='source')selectedSource=null;
+else selectedDestination=null;
+
+clearTimeout(timers[type]);
+const q=this.value;
+timers[type]=setTimeout(()=>searchLocation(q,type),450);
+});
+});
+
+document.addEventListener('click',e=>{
+['source','destination'].forEach(t=>{
+if(!document.getElementById(t).parentElement.contains(e.target)){
+document.getElementById(t+'Results').style.display='none';
+}
+});
+});
+
+async function sendToBackend(data){
+const r=await fetch('/api/command',{
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify(data)
+});
+
+if(!r.ok)throw Error('Backend HTTP '+r.status);
+
+const s=await r.json();
+applyBackendState(s);
+return s;
+}
+
+function applyBackendState(s){
+if(!s)return;
+
+setStatus('Connected to C++ backend.');
+
+if(s.locations)
+document.getElementById('locationCount').textContent=s.locations.length;
+
+if(s.roads){
+document.getElementById('roadCount').textContent=s.roads.length;
+
+s.roads.forEach((r,i)=>{
+if(graphLayers[i]){
+graphLayers[i].setStyle({
+color:trafficColors[r.traffic],
+weight:r.traffic===3?4:2,
+dashArray:r.traffic===3?'5 5':'5 6'
+});
+}
+});
+}
+
+if(s.incidents){
+incidents=s.incidents;
+renderIncidents();
+}
+
+document.getElementById('activeCount').textContent=s.activeCount??0;
+document.getElementById('criticalCount').textContent=s.criticalCount??0;
+document.getElementById('systemOutput').textContent=s.result||'Backend connected.';
+}
+
+async function syncState(){
+try{
+const r=await fetch('/api/state');
+if(!r.ok)throw Error('Backend offline');
+applyBackendState(await r.json());
+}catch(e){
+setStatus('Backend offline. Run SmartCity.exe.');
+}
+}
+
+async function findRoute(mode){
+if(!selectedSource||!selectedDestination){
+alert('Search and select both source and destination.');
+return;
+}
+
+if(selectedSource.lat===selectedDestination.lat&&
+selectedSource.lon===selectedDestination.lon){
+alert('Choose two different locations.');
+return;
+}
+
+try{
+setStatus('Calculating actual road route...');
+
+const a=selectedSource,b=selectedDestination;
+
+const url='https://router.project-osrm.org/route/v1/driving/'+
+a.lon+','+a.lat+';'+b.lon+','+b.lat+
+'?overview=full&geometries=geojson';
+
+const res=await fetch(url);
+if(!res.ok)throw Error('Routing service unavailable');
+
+const data=await res.json();
+
+if(data.code!=='Ok'||!data.routes.length)
+throw Error('No road route found');
+
+const r=data.routes[0];
+const km=(r.distance/1000).toFixed(2);
+const mins=Math.round(r.duration/60);
+
+if(routeLayer)map.removeLayer(routeLayer);
+
+routeLayer=L.geoJSON(r.geometry,{
+style:{
+color:mode==='shortest'?'#12d6a2':'#ffbd42',
+weight:6
+}
+}).addTo(map);
+
+map.fitBounds(routeLayer.getBounds(),{padding:[35,35]});
+
+document.getElementById('distanceValue').textContent=km+' KM';
+document.getElementById('timeValue').textContent=mins+' MIN';
+
+document.getElementById('routeOutput').textContent=
+'SOURCE: '+a.name+
+'\nDESTINATION: '+b.name+
+'\nROAD DISTANCE: '+km+' KM'+
+'\nESTIMATED TIME: '+mins+' MINUTES';
+
+document.getElementById('routeDetails').textContent=
+document.getElementById('routeOutput').textContent+
+'\nROUTE TYPE: '+mode.toUpperCase()+
+'\nRouting service: OSRM';
+
+startVehicle(r.geometry.coordinates);
+showTab('route');
+setStatus('Road route calculated successfully.');
+
+}catch(e){
+document.getElementById('routeOutput').textContent='Route error: '+e.message;
+setStatus('Route calculation failed.');
+console.error(e);
+}
+}
+
+function startVehicle(coords){
+if(vehicleTimer)clearInterval(vehicleTimer);
+if(vehicleMarker)map.removeLayer(vehicleMarker);
+
+let i=0;
+
+vehicleMarker=L.marker([coords[0][1],coords[0][0]],{
+icon:L.divIcon({
+className:'',
+html:'<div style="font-size:25px">🚑</div>',
+iconSize:[30,30],
+iconAnchor:[15,15]
+})
+}).addTo(map);
+
+vehicleTimer=setInterval(()=>{
+if(i>=coords.length-1){
+clearInterval(vehicleTimer);
+vehicleTimer=null;
+return;
+}
+
+i++;
+vehicleMarker.setLatLng([coords[i][1],coords[i][0]]);
+},350);
+}
+
+async function addIncident(){
+if(!selectedSource||!selectedDestination){
+alert('Please search and select both locations first.');
+return;
+}
+
+if(selectedSource.lat===selectedDestination.lat&&
+selectedSource.lon===selectedDestination.lon){
+alert('Choose two different locations.');
+return;
+}
+
+try{
+const s=await sendToBackend({
+action:'add',
+source:selectedSource.name,
+destination:selectedDestination.name,
+sourceLat:selectedSource.lat,
+sourceLon:selectedSource.lon,
+destinationLat:selectedDestination.lat,
+destinationLon:selectedDestination.lon
+});
+
+document.getElementById('routeOutput').textContent=s.result;
+showTab('incidents');
+alert(s.result);
+
+}catch(e){
+alert('Could not add emergency. Check C++ backend and select search suggestions.');
+console.error(e);
+}
+}
+
+async function processIncident(){
+try{
+const s=await sendToBackend({action:'process'});
+document.getElementById('routeOutput').textContent=s.result;
+showTab('incidents');
+}catch(e){
+alert('C++ backend not connected.');
+}
+}
+
+async function completeIncident(){
+if(!selectedIncident){
+alert('Click an incident card first.');
+return;
+}
+
+try{
+const s=await sendToBackend({
+action:'complete',
+id:selectedIncident
+});
+
+selectedIncident=null;
+document.getElementById('routeOutput').textContent=s.result;
+
+}catch(e){
+alert('Backend not connected.');
+}
+}
+
+async function changeTraffic(){
+try{
+const s=await sendToBackend({
+action:'traffic',
+road:Number(roadSelect.value),
+state:Number(document.getElementById('traffic').value)
+});
+
+document.getElementById('routeOutput').textContent=s.result;
+
+}catch(e){
+alert('Backend not connected.');
+}
+}
+
+async function toggleSimulation(){
+simulationRunning=!simulationRunning;
+
+document.getElementById('simulationButton').textContent=
+simulationRunning?'Stop Traffic Simulation':'Start Traffic Simulation';
+
+try{
+await sendToBackend({
+action:'simulation',
+enabled:simulationRunning
+});
+}catch(e){
+simulationRunning=false;
+document.getElementById('simulationButton').textContent='Start Traffic Simulation';
+alert('Backend not connected.');
+}
+}
+
+async function saveData(){
+try{
+const s=await sendToBackend({action:'save'});
+setStatus(s.result);
+}catch(e){
+alert('Backend not connected.');
+}
+}
+
+async function loadData(){
+try{
+const s=await sendToBackend({action:'load'});
+setStatus(s.result);
+}catch(e){
+alert('Backend not connected.');
+}
+}
+
+function renderIncidents(){
+const list=document.getElementById('incidentList');
+list.innerHTML='';
+
+if(!incidents.length){
+list.textContent='No incidents added yet.';
+return;
+}
+
+incidents.slice().reverse().forEach(x=>{
+const d=document.createElement('div');
+d.className='incident '+(x.priority===3?'critical':'');
+
+const h=document.createElement('h3');
+h.textContent=x.id+' · '+x.type;
+
+const p=document.createElement('p');
+p.textContent=x.source+' → '+x.destination;
+
+const st=document.createElement('p');
+st.textContent='Priority '+x.priority+' | '+x.status;
+
+d.append(h,p,st);
+
+d.onclick=()=>{
+selectedIncident=x.id;
+document.getElementById('routeOutput').textContent=
+x.id+' | '+x.type+' | '+x.status;
+};
+
+list.appendChild(d);
+});
+}
+
+function resetMap(){
+map.setView([19.9975,73.7898],12);
+}
+
+syncState();
+setInterval(syncState,3000);
+</script>
+</body>
+</html>
